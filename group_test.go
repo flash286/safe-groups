@@ -138,19 +138,20 @@ func TestRunner_Run(t *testing.T) {
 	})
 
 	t.Run("ctx_with_timeout", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1)
+		timeout := time.Millisecond * 20
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		c := int64(0)
 		runner := NewRunner(true,
 			func(context context.Context) error {
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Millisecond * 75)
 				atomic.AddInt64(&c, 1)
 				return nil
 			},
 			func(context context.Context) error {
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Millisecond * 25)
 				atomic.AddInt64(&c, 1)
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Millisecond * 50)
 				atomic.AddInt64(&c, 1)
 				return nil // Doing well
 			},
@@ -160,7 +161,30 @@ func TestRunner_Run(t *testing.T) {
 		duration := int64(time.Now().Sub(startTime).Seconds() * float64(1000)) // Milliseconds
 		if assert.NotNil(t, err) {
 			assert.Equal(t, TimeoutError, err)
-			assert.Less(t, duration, int64(1000))
+			assert.Less(t, duration, int64(timeout.Seconds()*1000*1.3))
 		}
+		assert.Equal(t, int64(0), c)
+	})
+
+	t.Run("ctx_canceled_before_all_tasks_start", func(t *testing.T) {
+		timeout := time.Second * 20
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		c := int64(0)
+		runner := NewRunner(true,
+			func(context context.Context) error {
+				time.Sleep(time.Millisecond * 5)
+				atomic.AddInt64(&c, 1)
+				return nil
+			},
+			func(context context.Context) error {
+				time.Sleep(time.Millisecond * 5)
+				atomic.AddInt64(&c, 1)
+				return nil // Doing well
+			},
+		)
+		cancel()
+		err := runner.Do(ctx)
+		assert.Nil(t, err)
+		assert.Equal(t, int64(0), c)
 	})
 }

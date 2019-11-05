@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	TimeoutError = fmt.Errorf("timeout error")
+	TimeoutError    = fmt.Errorf("timeout error")
+	aggregatedError = fmt.Errorf("combined error:\n")
 )
 
 type Task func(context.Context) error
@@ -36,15 +37,7 @@ func (r *Runner) Do(parent context.Context) error {
 		go func(fn Task) {
 			defer wg.Done()
 			defer safePanic(resultChannel)
-			select {
-			case <-ctx.Done():
-				if deadline, ok := ctx.Deadline(); ok && deadline.Before(time.Now()) {
-					resultChannel <- TimeoutError
-				}
-				return // returning not to leak the goroutine
-			case resultChannel <- fn(ctx):
-				// Just do the job
-			}
+			resultChannel <- fn(ctx)
 		}(task)
 	}
 
@@ -54,17 +47,28 @@ func (r *Runner) Do(parent context.Context) error {
 		close(resultChannel)
 	}()
 
-	aggregatedError := fmt.Errorf("Combined error:\n")
 	var didError bool
-	for err := range resultChannel {
-		if err != nil {
-			if r.StopIfError || len(r.Tasks) == 1 {
-				cancel()
-				return err
+	tasksCount := len(r.Tasks)
+	var tasksFinished int
+
+	for tasksFinished < tasksCount {
+		select {
+		case <-ctx.Done():
+			if deadline, ok := ctx.Deadline(); ok && deadline.Before(time.Now()) {
+				return TimeoutError
 			}
-			aggregatedError = fmt.Errorf("%v%v\n", aggregatedError, err)
-			didError = true
+			return nil
+		case err := <-resultChannel:
+			if err != nil {
+				if r.StopIfError || len(r.Tasks) == 1 {
+					cancel()
+					return err
+				}
+				aggregatedError = fmt.Errorf("%v%v\n", aggregatedError, err)
+				didError = true
+			}
 		}
+		tasksFinished++
 	}
 
 	if didError {
@@ -87,7 +91,7 @@ func safePanic(resultChannel chan<- error) {
 func wrapPanic(recovered interface{}) error {
 	var buf [16384]byte
 	stack := buf[0:runtime.Stack(buf[:], false)]
-	return fmt.Errorf("async.Run: panic %v\n%v", recovered, chopStack(stack, "panic("))
+	return fmt.Errorf("safe_group.Run: panic %v\n%v", recovered, chopStack(stack, "panic("))
 }
 
 func chopStack(s []byte, panicText string) string {
