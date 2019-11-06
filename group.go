@@ -19,49 +19,47 @@ type Task func(context.Context) error
 type Runner struct {
 	Tasks       []Task
 	StopIfError bool
+	wg          sync.WaitGroup
+	PoolSize    int
 }
 
 func NewRunner(stopIfFail bool, tasks ...Task) *Runner {
-	return &Runner{Tasks: tasks, StopIfError: stopIfFail}
+	return &Runner{Tasks: tasks, StopIfError: stopIfFail, PoolSize: len(tasks)}
+}
+
+func (r *Runner) WithWorkerPool(size int) *Runner {
+	r.PoolSize = size
+	return r
 }
 
 func (r *Runner) Do(parent context.Context) error {
-	ctx, cancel := context.WithCancel(parent)
+	tasksCount := len(r.Tasks)
 
-	resultChannel := make(chan error, len(r.Tasks))
+	resultChannel := make(chan error, tasksCount)
 
-	var wg sync.WaitGroup
-	wg.Add(len(r.Tasks))
+	r.wg.Add(len(r.Tasks))
+
+	wp := NewWorkerPool(r.PoolSize, parent, tasksCount)
+	wp.Run(resultChannel)
+	defer wp.Stop()
 
 	for _, task := range r.Tasks {
-		go func(fn Task) {
-			defer wg.Done()
-			defer safePanic(resultChannel)
-			resultChannel <- fn(ctx)
-		}(task)
+		wp.JobsChannel <- task
 	}
 
-	go func() {
-		wg.Wait()
-		cancel()
-		close(resultChannel)
-	}()
-
 	var didError bool
-	tasksCount := len(r.Tasks)
 	var tasksFinished int
 
 	for tasksFinished < tasksCount {
 		select {
-		case <-ctx.Done():
-			if deadline, ok := ctx.Deadline(); ok && deadline.Before(time.Now()) {
+		case <-parent.Done():
+			if deadline, ok := parent.Deadline(); ok && deadline.Before(time.Now()) {
 				return TimeoutError
 			}
-			return nil
+			return parent.Err()
 		case err := <-resultChannel:
 			if err != nil {
 				if r.StopIfError || len(r.Tasks) == 1 {
-					cancel()
 					return err
 				}
 				aggregatedError = fmt.Errorf("%v%v\n", aggregatedError, err)

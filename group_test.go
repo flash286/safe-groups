@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,7 +107,7 @@ func TestRunner_Run(t *testing.T) {
 			func(context context.Context) error {
 				return errors.New("error 3")
 			},
-		)
+		).WithWorkerPool(2)
 
 		err := runner.Do(ctx)
 		assert.NotNil(t, err)
@@ -184,7 +185,72 @@ func TestRunner_Run(t *testing.T) {
 		)
 		cancel()
 		err := runner.Do(ctx)
-		assert.Nil(t, err)
+		assert.Error(t, err)
 		assert.Equal(t, int64(0), c)
+		assert.Equal(t, err.Error(), "context canceled")
+	})
+
+	t.Run("worker_pool", func(t *testing.T) {
+		c := int64(0)
+		var mtx sync.Mutex
+		maxC := int64(0)
+
+		runner := NewRunner(true,
+			func(context context.Context) error {
+				defer func() {
+					mtx.Lock()
+					if c > maxC {
+						maxC = c
+					}
+					c--
+					mtx.Unlock()
+				}()
+				atomic.AddInt64(&c, 1)
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(50)))
+				return nil
+			},
+			func(context context.Context) error {
+				defer func() {
+					mtx.Lock()
+					if c > maxC {
+						maxC = c
+					}
+					c--
+					mtx.Unlock()
+				}()
+				atomic.AddInt64(&c, 1)
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(50)))
+				return nil
+			},
+			func(context context.Context) error {
+				defer func() {
+					mtx.Lock()
+					if c > maxC {
+						maxC = c
+					}
+					c--
+					mtx.Unlock()
+				}()
+				atomic.AddInt64(&c, 1)
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(50)))
+				return nil
+			},
+			func(context context.Context) error {
+				defer func() {
+					mtx.Lock()
+					if c > maxC {
+						maxC = c
+					}
+					c--
+					mtx.Unlock()
+				}()
+				atomic.AddInt64(&c, 1)
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(50)))
+				return nil
+			},
+		).WithWorkerPool(2)
+		err := runner.Do(context.Background())
+		assert.Nil(t, err)
+		assert.Greater(t, int64(3), maxC)
 	})
 }
