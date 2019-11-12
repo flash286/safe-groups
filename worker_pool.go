@@ -37,8 +37,10 @@ func worker(ctx context.Context, jobs <-chan Task, resultChannel chan error) int
 		select {
 		case <-ctx.Done():
 			return 1
-		case task := <-jobs:
-			resultChannel <- task(ctx)
+		case task, valid := <-jobs:
+			if valid {
+				resultChannel <- task(ctx)
+			}
 		}
 	}
 }

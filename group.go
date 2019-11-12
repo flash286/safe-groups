@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"sync"
 	"time"
 )
 
@@ -19,7 +18,6 @@ type Task func(context.Context) error
 type Runner struct {
 	Tasks       []Task
 	StopIfError bool
-	wg          sync.WaitGroup
 	PoolSize    int
 }
 
@@ -37,7 +35,9 @@ func (r *Runner) Do(parent context.Context) error {
 
 	resultChannel := make(chan error, tasksCount)
 
-	r.wg.Add(len(r.Tasks))
+	if tasksCount < r.PoolSize {
+		r.PoolSize = tasksCount
+	}
 
 	wp := NewWorkerPool(r.PoolSize, parent, tasksCount)
 	wp.Run(resultChannel)
