@@ -133,9 +133,11 @@ func TestRunner_Run(t *testing.T) {
 		err := runner.Do(ctx)
 
 		assert.NotNil(t, err)
-		assert.Equal(t, c, int64(1))                                                      // part of job has been done!
-		assert.Contains(t, err.Error(), "go.avito.ru/av/safe-groups.TestRunner_Run.func") // checking stacktrace
-		assert.Contains(t, err.Error(), "i'm panic")                                      // checking panic body
+		assert.Equal(t, c, int64(1))                         // part of job has been done!
+		assert.Contains(t, err.Error(), "group_test.go:125") // checking stacktrace
+		assert.Contains(t, err.Error(), "worker_pool.go:42") // checking stacktrace
+		assert.Contains(t, err.Error(), "worker_pool.go:26") // checking stacktrace
+		assert.Contains(t, err.Error(), "i'm panic")         // checking panic body
 	})
 
 	t.Run("ctx_with_timeout", func(t *testing.T) {
