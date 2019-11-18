@@ -10,7 +10,7 @@ import (
 
 var (
 	TimeoutError    = fmt.Errorf("timeout error")
-	aggregatedError = fmt.Errorf("combined error:\n")
+	aggregatedError = "combined error:\n"
 )
 
 type Task func(context.Context) error
@@ -49,6 +49,7 @@ func (r *Runner) Do(parent context.Context) error {
 
 	var didError bool
 	var tasksFinished int
+	errRes := fmt.Errorf(aggregatedError)
 
 	for tasksFinished < tasksCount {
 		select {
@@ -62,7 +63,7 @@ func (r *Runner) Do(parent context.Context) error {
 				if r.StopIfError || len(r.Tasks) == 1 {
 					return err
 				}
-				aggregatedError = fmt.Errorf("%v%v\n", aggregatedError, err)
+				errRes = fmt.Errorf("%v%v\n", errRes, err)
 				didError = true
 			}
 		}
@@ -70,7 +71,7 @@ func (r *Runner) Do(parent context.Context) error {
 	}
 
 	if didError {
-		return aggregatedError
+		return errRes
 	}
 
 	return nil
